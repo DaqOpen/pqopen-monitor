@@ -1,2 +1,2 @@
-# pqopen-gridpulse
-GridPulse Monitoring System
+# pqopen-monitor
+PQopen Monitoring System
