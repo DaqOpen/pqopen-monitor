@@ -3,7 +3,7 @@
 ARG PYTHON_VERSION=3.11
 FROM python:${PYTHON_VERSION}-alpine as base
 
-RUN apk update && apk add tzdata
+RUN apk update && apk add tzdata gcc musl-dev python3-dev libffi-dev openssl-dev
 ENV TZ=Europe/Vienna
 
 # Prevents Python from writing pyc files.
