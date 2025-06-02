@@ -3,3 +3,4 @@ aiomqtt
 influxdb_client[async]
 pandas
 dotenv
+cbor2

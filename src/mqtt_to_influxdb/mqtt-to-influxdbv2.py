@@ -7,6 +7,8 @@ import gzip
 import logging
 import os
 import signal
+import cbor2
+import math
 from influxdb_client.client.influxdb_client_async import InfluxDBClientAsync
 from influxdb_client.client.write_api import WriteApi
 
@@ -24,7 +26,9 @@ MQTT_HOST = os.getenv("PQOPEN_MQTT_HOST", "mqtt.pqopen.com")
 MQTT_PORT = int(os.getenv("PQOPEN_MQTT_PORT", 8883))
 MQTT_USERNAME = os.getenv("PQOPEN_MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("PQOPEN_MQTT_PASSWORD")
+MQTT_USE_TLS = True if os.getenv("PQOPEN_MQTT_USE_TLS", "True") == "True" else False
 MQTT_TOPIC = os.getenv("PQOPEN_MQTT_TOPIC", "private/#")
+MQTT_CLIENT_ID = os.getenv("PQOPEN_MQTT_CLIENT_ID", "mqtt-to-database")
 INFLUXDB_URL = os.getenv("PQOPEN_INFLUXDB_URL", "http://localhost:8086")
 INFLUXDB_TOKEN = os.getenv("PQOPEN_INFLUXDB_TOKEN", "")
 INFLUXDB_ORG = os.getenv("PQOPEN_INFLUXDB_ORG", "pqopen")
@@ -36,40 +40,100 @@ def decode_payload(payload: bytes, encoding: str):
         payload_dict = json.loads(gzip.decompress(payload))
     elif encoding == "json":
         payload_dict = json.loads(payload)
+    elif encoding == "cbor":
+        payload_dict = cbor2.loads(payload)
 
     return payload_dict
 
 async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: asyncio.Event):
-    """Async: empfängt MQTT-Nachrichten und legt sie in die Queue."""
-    tls_context = ssl.create_default_context()
-    async with aiomqtt.Client(MQTT_HOST, port=MQTT_PORT, username=MQTT_USERNAME, password=MQTT_PASSWORD, tls_insecure=False, tls_context=tls_context, identifier="mqtt-to-database") as client:
+    async def write_dataseries(device_config, data):
+        df = convert_dataseries_to_df(data)
+        df.loc[:,"location_name"] = device_config["location_name"]
+        df.loc[:,"location_lat"] = device_config["location_lat"]
+        df.loc[:,"location_lon"] = device_config["location_lon"]
+        del df["timestamp"]
+        await write_api.write(bucket="short_term", 
+                              record=df,
+                              data_frame_measurement_name='cycle-by-cycle',
+                              data_frame_tag_columns=['location_name', "location_lat", "location_lon"])
+    async def write_aggdata(device_config, data):
+        json_body = {'measurement': 'aggregated-data',
+                     'tags': {'interval_sec': data['interval_sec'],
+                              'location_name': device_config["location_name"],
+                              'location_lat': device_config["location_lat"],
+                              'location_lon': device_config["location_lon"]},
+                     'time': int(data['timestamp']*1e9),
+                     'fields': {}}
+    
+        for ch_name, val in data['data'].items():
+            if ch_name.startswith('_'):
+                continue
+            if type(val) in [list]:
+                for idx, item in enumerate(val):
+                    if (item is None) or math.isnan(item):
+                        continue
+                    json_body['fields'][ch_name+f'{idx:02d}'] = item
+            else:
+                if (val is None) or math.isnan(val):
+                    continue
+                json_body['fields'][ch_name] = val
+        await write_api.write(bucket="short_term", 
+                              record=json_body)
+    # Create TLS Kontext
+    if MQTT_USE_TLS:
+        tls_context = ssl.create_default_context()
+        tls_insecure = False
+        logger.debug("Use TLS")
+    else:
+        tls_context = None
+        tls_insecure = None
+        logger.debug("Don't use TLS")
+    async with aiomqtt.Client(MQTT_HOST, port=MQTT_PORT, username=MQTT_USERNAME, password=MQTT_PASSWORD, tls_insecure=tls_insecure, tls_context=tls_context, identifier=MQTT_CLIENT_ID) as client:
         await client.subscribe(MQTT_TOPIC, 2)
+        topic_prefix = MQTT_TOPIC.split("/#")[0]
+        topic_prefix_num_parts = len(topic_prefix.split("/"))
         async for message in client.messages:
             if stop_event.is_set():
                 break
             try:
-                parts = message.topic.value.split("/")
-                if len(parts) < 4:
+                parts = message.topic.value.split("/") # {topic-prefix}/{device-id}/{data-type}/{encoding}
+                if len(parts) < (topic_prefix_num_parts + 3):
                     logger.warning(f"Unerwartetes Topic-Format: {message.topic}")
                     continue
-                device_id, data_type, encoding = parts[1], parts[2], parts[3]
+                device_id, data_type, encoding = parts[-3], parts[-2], parts[-1]
                 if device_id in device_config:
                     data = decode_payload(message.payload, encoding)
-                    if data_type == "dataseries":
-                        df = convert_dataseries_to_df(data["data"])
-                        df.loc[:,"location_name"] = device_config[device_id]["location_name"]
-                        df.loc[:,"location_lat"] = device_config[device_id]["location_lat"]
-                        df.loc[:,"location_lon"] = device_config[device_id]["location_lon"]
-                        del df["timestamp"]
-                        await write_api.write(bucket="short_term", 
-                                            record=df,
-                                            data_frame_measurement_name='cycle-by-cycle',
-                                            data_frame_tag_columns=['location_name', "location_lat", "location_lon"])
-                        print("data Sent")
+                    # Multi Part (Bulk) Message = data is of type list and holds multiple messages
+                    if isinstance(data, list):
+                        for data_packet in data:
+                            subtopic_parts = data_packet["subtopic"].split("/")
+                            data_type = subtopic_parts[-2]
+                            encoding = subtopic_parts[-1]
+                            data_snippet = decode_payload(data_packet["payload"], encoding)
+                            if data_type == "dataseries":
+                                await write_dataseries(device_config=device_config[device_id], data=data_snippet["data"])
+                                logger.debug("data Sent")
+                            elif data_type == "agg_data":
+                                await write_aggdata(device_config=device_config[device_id], data=data_snippet)
+                            elif data_type == "event":
+                                pass
+                    # Single Part Messages
+                    # Dataseries Message
+                    elif data_type == "dataseries":
+                        await write_dataseries(device_config=device_config[device_id], data=data["data"])
+                        logger.debug("data Sent")
+                    # Aggregated Data Message
+                    elif data_type == "agg_data":
+                        await write_aggdata(device_config=device_config[device_id], data=data)
+                    # Event Data Message
+                    elif data_type == "event":
+                        pass
+                    else:
+                        logger.warning(f"Datatype {data_type} not implemented")
                 else:
-                    print("Device not configured", device_id)
+                    logger.warning(f"Device {device_id} not configured")
             except Exception as e:
-                print("Fehler bei Nachricht:", e)
+                logger.error(f"Fehler bei Nachricht: {str(e)}")
 
 
 async def main():
