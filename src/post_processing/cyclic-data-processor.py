@@ -52,7 +52,7 @@ def process_freq_psd_spectrum(query_api, writer_api, start_time: datetime.dateti
     data_frame = query_cycle_by_cycle_data(query_api, start_time, stop_time, location_name, ["Freq"])
     if data_frame is None:
        return None
-    frequencies, psd = welch(data_frame["Freq"], nperseg=5000,fs=fs) # 10 mHz Resolution
+    frequencies, psd = welch(data_frame["Freq"].values, nperseg=5000,fs=fs) # 10 mHz Resolution
     psd_df = pd.DataFrame(data=[20*np.log10(psd[:300])], columns=[f"{freq:.3f} Hz" for freq in frequencies[:300]], index=[stop_time])
     psd_df.loc[:, "location_name"] = location_name
     writer_api.write("calculated_data", 
@@ -77,7 +77,7 @@ app_killer = GracefulKiller()
 
 client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG)
 query_api = client.query_api()
-writer_api = client.write_api()
+writer_api = client.write_api(write_options=SYNCHRONOUS)
 
 next_round_ts = floor_timestamp(time.time(), 900, "s") + 900
 
@@ -86,6 +86,7 @@ while not app_killer.kill_now:
         time.sleep(1)
     calc_dt_start = datetime.datetime.fromtimestamp(next_round_ts - 900, tz=datetime.UTC)
     calc_dt_end = datetime.datetime.fromtimestamp(next_round_ts, tz=datetime.UTC)
+    print(calc_dt_start, calc_dt_end)
     process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "Graz")
     next_round_ts += 900
     
