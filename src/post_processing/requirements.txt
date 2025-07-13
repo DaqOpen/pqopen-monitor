@@ -1,0 +1,6 @@
+influxdb_client
+pandas
+dotenv
+numpy
+scipy
+pqopen-lib
