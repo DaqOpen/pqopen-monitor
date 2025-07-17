@@ -52,7 +52,7 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
         df.loc[:,"location_lat"] = device_config["location_lat"]
         df.loc[:,"location_lon"] = device_config["location_lon"]
         del df["timestamp"]
-        await write_api.write(bucket="short_term", 
+        await write_api.write(bucket=device_config.get("db_dataseries_bucket", "short_term"), 
                               record=df,
                               data_frame_measurement_name='cycle-by-cycle',
                               data_frame_tag_columns=['location_name', "location_lat", "location_lon"])
@@ -77,8 +77,21 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
                 if (val is None) or math.isnan(val):
                     continue
                 json_body['fields'][ch_name] = val
-        await write_api.write(bucket="short_term", 
+        await write_api.write(bucket=device_config.get("db_aggregated_bucket", "short_term"),
                               record=json_body)
+    
+    async def write_eventdata(device_config, data):
+        json_body = {'measurement': 'event-data',
+                     'tags': {'event_type': data["event_type"],
+                              'channel': data["channel"],
+                              'location_name': device_config["location_name"],
+                              'location_lat': device_config["location_lat"],
+                              'location_lon': device_config["location_lon"]},
+                     'time': int(data['timestamp']*1e9),
+                     'fields': data["data"]}
+        await write_api.write(bucket=device_config.get("db_event_bucket", "short_term"),
+                              record=json_body)
+
     # Create TLS Kontext
     if MQTT_USE_TLS:
         tls_context = ssl.create_default_context()
@@ -116,7 +129,7 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
                             elif data_type == "agg_data":
                                 await write_aggdata(device_config=device_config[device_id], data=data_snippet)
                             elif data_type == "event":
-                                pass
+                                await write_eventdata(device_config=device_config[device_id], data=data_snippet)
                     # Single Part Messages
                     # Dataseries Message
                     elif data_type == "dataseries":
