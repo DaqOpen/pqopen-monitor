@@ -72,7 +72,7 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
                 for idx, item in enumerate(val):
                     if (item is None) or math.isnan(item):
                         continue
-                    json_body['fields'][ch_name+f'{idx:02d}'] = item
+                    json_body['fields'][ch_name+f'_{idx:02d}'] = item
             else:
                 if (val is None) or math.isnan(val):
                     continue
