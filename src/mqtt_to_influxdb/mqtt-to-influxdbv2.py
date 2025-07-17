@@ -134,13 +134,15 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
                     # Dataseries Message
                     elif data_type == "dataseries":
                         await write_dataseries(device_config=device_config[device_id], data=data["data"])
-                        logger.debug("data Sent")
+                        logger.debug("Dataseries written to DB")
                     # Aggregated Data Message
                     elif data_type == "agg_data":
                         await write_aggdata(device_config=device_config[device_id], data=data)
+                        logger.debug("Agg-Data written to DB")
                     # Event Data Message
                     elif data_type == "event":
-                        pass
+                        await write_eventdata(device_config=device_config[device_id], data=data_snippet)
+                        logger.debug("Event Data written to DB")
                     else:
                         logger.warning(f"Datatype {data_type} not implemented")
                 else:
