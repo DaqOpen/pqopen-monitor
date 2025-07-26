@@ -88,5 +88,7 @@ while not app_killer.kill_now:
     calc_dt_end = datetime.datetime.fromtimestamp(next_round_ts, tz=datetime.UTC)
     print(calc_dt_start, calc_dt_end)
     process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "Graz")
+    process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "DE/Berlin")
+    process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "CH/Solothurn")
     next_round_ts += 900
     
