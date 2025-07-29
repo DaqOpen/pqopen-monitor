@@ -101,7 +101,7 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
         tls_context = None
         tls_insecure = None
         logger.debug("Don't use TLS")
-    async with aiomqtt.Client(MQTT_HOST, port=MQTT_PORT, username=MQTT_USERNAME, password=MQTT_PASSWORD, tls_insecure=tls_insecure, tls_context=tls_context, identifier=MQTT_CLIENT_ID) as client:
+    async with aiomqtt.Client(MQTT_HOST, port=MQTT_PORT, username=MQTT_USERNAME, password=MQTT_PASSWORD, tls_insecure=tls_insecure, tls_context=tls_context, identifier=MQTT_CLIENT_ID, clean_session=False) as client:
         await client.subscribe(MQTT_TOPIC, 2)
         topic_prefix = MQTT_TOPIC.split("/#")[0]
         topic_prefix_num_parts = len(topic_prefix.split("/"))

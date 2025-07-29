@@ -1,8 +1,10 @@
 {
     "output_path": "/mnt/pqopen-archive",
     "tasks_daily": [
-        {"measurement": "cycle-by-cycle", "location_name": "Graz", "channels": ["Freq"]},
+        {"measurement": "cycle-by-cycle", "location_name": "AT/Graz", "channels": ["Freq"]},
+        {"measurement": "cycle-by-cycle", "location_name": "AT/Spielfeld", "channels": ["Freq"]},
         {"measurement": "cycle-by-cycle", "location_name": "DE/Berlin", "channels": ["Freq"]},
-        {"measurement": "cycle-by-cycle", "location_name": "CH/Solothurn", "channels": ["Freq"]}
+        {"measurement": "cycle-by-cycle", "location_name": "CH/Solothurn", "channels": ["Freq"]},
+        {"measurement": "cycle-by-cycle", "location_name": "DE/Essen", "channels": ["Freq"]}
     ]
 }

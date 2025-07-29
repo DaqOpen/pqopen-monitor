@@ -53,7 +53,7 @@ def process_freq_psd_spectrum(query_api, writer_api, start_time: datetime.dateti
     if data_frame is None:
        return None
     frequencies, psd = welch(data_frame["Freq"].values, nperseg=5000,fs=fs) # 10 mHz Resolution
-    psd_df = pd.DataFrame(data=[20*np.log10(psd[:300])], columns=[f"{freq:.3f} Hz" for freq in frequencies[:300]], index=[stop_time])
+    psd_df = pd.DataFrame(data=[20*np.log10(psd[:500])], columns=[f"{freq:.3f} Hz" for freq in frequencies[:500]], index=[stop_time])
     psd_df.loc[:, "location_name"] = location_name
     writer_api.write("calculated_data", 
                      record=psd_df, 
@@ -87,8 +87,9 @@ while not app_killer.kill_now:
     calc_dt_start = datetime.datetime.fromtimestamp(next_round_ts - 900, tz=datetime.UTC)
     calc_dt_end = datetime.datetime.fromtimestamp(next_round_ts, tz=datetime.UTC)
     print(calc_dt_start, calc_dt_end)
-    process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "Graz")
+    process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "AT/Graz")
     process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "DE/Berlin")
     process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "CH/Solothurn")
+    process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "DE/Essen")
     next_round_ts += 900
     
