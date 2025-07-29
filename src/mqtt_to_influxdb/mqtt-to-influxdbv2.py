@@ -14,7 +14,7 @@ from influxdb_client.client.write_api import WriteApi
 
 from dataconverter import convert_dataseries_to_df
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app_env = os.getenv("DAQPEN_ENV", "development")
@@ -77,7 +77,7 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
                 if (val is None) or math.isnan(val):
                     continue
                 json_body['fields'][ch_name] = val
-        await write_api.write(bucket=device_config.get("db_aggregated_bucket", "short_term"),
+        await write_api.write(bucket=device_config.get("db_aggregated_bucket", "long_term"),
                               record=json_body)
     
     async def write_eventdata(device_config, data):
@@ -89,7 +89,7 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
                               'location_lon': device_config["location_lon"]},
                      'time': int(data['timestamp']*1e9),
                      'fields': data["data"]}
-        await write_api.write(bucket=device_config.get("db_event_bucket", "short_term"),
+        await write_api.write(bucket=device_config.get("db_event_bucket", "long_term"),
                               record=json_body)
 
     # Create TLS Kontext
