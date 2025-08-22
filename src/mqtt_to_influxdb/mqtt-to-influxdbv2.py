@@ -2,7 +2,7 @@
 import asyncio
 import aiomqtt
 import ssl
-import json
+import orjson
 import gzip
 import logging
 import os
@@ -12,14 +12,16 @@ import math
 from influxdb_client.client.influxdb_client_async import InfluxDBClientAsync
 from influxdb_client.client.write_api import WriteApi
 
-from dataconverter import convert_dataseries_to_df
+from dataconverter import convert_dataseries_to_df, cbc_dict_to_line_protocol, agg_dict_to_line_protocol
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app_env = os.getenv("DAQPEN_ENV", "development")
+app_env = os.getenv("DAQOPEN_ENV", "development")
+mqtt_clean_session = False
 if app_env == "development":
     from dotenv import load_dotenv
+    mqtt_clean_session = True
     load_dotenv()
 
 MQTT_HOST = os.getenv("PQOPEN_MQTT_HOST", "mqtt.pqopen.com")
@@ -37,9 +39,9 @@ location_cache = {}
 
 def decode_payload(payload: bytes, encoding: str):
     if encoding == "gjson":
-        payload_dict = json.loads(gzip.decompress(payload))
+        payload_dict = orjson.loads(gzip.decompress(payload))
     elif encoding == "json":
-        payload_dict = json.loads(payload)
+        payload_dict = orjson.loads(payload)
     elif encoding == "cbor":
         payload_dict = cbor2.loads(payload)
 
@@ -47,38 +49,22 @@ def decode_payload(payload: bytes, encoding: str):
 
 async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: asyncio.Event):
     async def write_dataseries(device_config, data):
-        df = convert_dataseries_to_df(data)
-        df.loc[:,"location_name"] = device_config["location_name"]
-        df.loc[:,"location_lat"] = device_config["location_lat"]
-        df.loc[:,"location_lon"] = device_config["location_lon"]
-        del df["timestamp"]
+        tags = {"location_name": device_config["location_name"],
+                "location_lat": device_config["location_lat"],
+                "location_lon": device_config["location_lon"]}
+        lp_data = cbc_dict_to_line_protocol(m_data=data, tags=tags)
         await write_api.write(bucket=device_config.get("db_dataseries_bucket", "short_term"), 
-                              record=df,
-                              data_frame_measurement_name='cycle-by-cycle',
-                              data_frame_tag_columns=['location_name', "location_lat", "location_lon"])
+                              record=lp_data)
+        
     async def write_aggdata(device_config, data):
-        json_body = {'measurement': 'aggregated-data',
-                     'tags': {'interval_sec': data['interval_sec'],
-                              'location_name': device_config["location_name"],
-                              'location_lat': device_config["location_lat"],
-                              'location_lon': device_config["location_lon"]},
-                     'time': int(data['timestamp']*1e9),
-                     'fields': {}}
-    
-        for ch_name, val in data['data'].items():
-            if ch_name.startswith('_'):
-                continue
-            if type(val) in [list]:
-                for idx, item in enumerate(val):
-                    if (item is None) or math.isnan(item):
-                        continue
-                    json_body['fields'][ch_name+f'_{idx:02d}'] = item
-            else:
-                if (val is None) or math.isnan(val):
-                    continue
-                json_body['fields'][ch_name] = val
+        tags = {"interval_sec": data["interval_sec"],
+                "location_name": device_config["location_name"],
+                "location_lat": device_config["location_lat"],
+                "location_lon": device_config["location_lon"]}
+        
+        lp_data = agg_dict_to_line_protocol(m_data=data, tags=tags)
         await write_api.write(bucket=device_config.get("db_aggregated_bucket", "long_term"),
-                              record=json_body)
+                              record=lp_data)
     
     async def write_eventdata(device_config, data):
         json_body = {'measurement': 'event-data',
@@ -101,7 +87,7 @@ async def mqtt_listener(write_api: WriteApi, device_config: dict, stop_event: as
         tls_context = None
         tls_insecure = None
         logger.debug("Don't use TLS")
-    async with aiomqtt.Client(MQTT_HOST, port=MQTT_PORT, username=MQTT_USERNAME, password=MQTT_PASSWORD, tls_insecure=tls_insecure, tls_context=tls_context, identifier=MQTT_CLIENT_ID, clean_session=False) as client:
+    async with aiomqtt.Client(MQTT_HOST, port=MQTT_PORT, username=MQTT_USERNAME, password=MQTT_PASSWORD, tls_insecure=tls_insecure, tls_context=tls_context, identifier=MQTT_CLIENT_ID, clean_session=mqtt_clean_session) as client:
         await client.subscribe(MQTT_TOPIC, 2)
         topic_prefix = MQTT_TOPIC.split("/#")[0]
         topic_prefix_num_parts = len(topic_prefix.split("/"))
@@ -169,7 +155,7 @@ async def main():
     write_api = db_client.write_api()
     # Load Device Config
     with open("config/device_config.json") as f:
-        device_config = json.load(f)
+        device_config = orjson.loads(f.read())
 
     try:
         await mqtt_listener(write_api, device_config, stop_event)
