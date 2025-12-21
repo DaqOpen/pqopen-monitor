@@ -18,10 +18,12 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+RUN mkdir config
+
 # Copy the source code into the container.
 COPY . .
 
 RUN pip install -r requirements.txt
 
 # Run the application.
-CMD ["fastapi", "run", "fast-api-app.py"]
+CMD ["fastapi", "run", "main.py"]

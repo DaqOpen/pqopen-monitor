@@ -61,10 +61,8 @@ def read_data_pl(start_dt, stop_dt, location, bucket, measurement = "aggregated-
           |> keep(columns: ["_time", "_field", "_value"])
         """
     response = requests.post(INFLUXDB_URL+"/api/v2/query", params={"org": INFLUXDB_ORG}, headers=headers, data=query)
-    print(query)
     # Load Response with Polars CSV Reader
     pl_df = pl.read_csv(BytesIO(response.content))
-    print(pl_df)
     pl_df = pl_df.drop(["", "result", "table"])
     pl_df = pl_df.filter(pl.col("_field").is_not_null())
     pl_df = pl_df.with_columns(pl.col("_time").str.to_datetime(time_zone="UTC"))
