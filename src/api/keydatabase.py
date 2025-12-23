@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 
 # Database connection string: local sqlite file
-SQLALCHEMY_DATABASE_URL = "sqlite:///./api_keys.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///./config/api_keys.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
