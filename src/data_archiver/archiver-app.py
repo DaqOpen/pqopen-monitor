@@ -3,11 +3,10 @@ import logging
 import datetime
 import time
 import json
-import pyarrow as pa
-import pyarrow.parquet as pq
 import re
+import os
 from pathlib import Path
-from influx_client import query_data_range
+import influx2client
 
 class GracefulKiller:
   kill_now = False
@@ -22,6 +21,14 @@ class GracefulKiller:
 def clean_string(string_to_clean: str):
     res = re.sub(r'[^a-zA-Z0-9_]', '_', string_to_clean)
     return res
+
+app_env = os.getenv("DAQPEN_ENV", "development")
+if app_env == "development":
+    from dotenv import load_dotenv
+    load_dotenv()
+
+INFLUXDB_BUCKET_ST = os.getenv("PQOPEN_INFLUXDB_BUCKET_ST", "short_term")
+INFLUXDB_BUCKET_LT = os.getenv("PQOPEN_INFLUXDB_BUCKET_LT", "long_term")
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -44,18 +51,19 @@ while not app_killer.kill_now:
     print(data_range_start, data_range_end)
     for archiver_task in app_config["tasks_daily"]:
        # Read Data from Database
-       df = query_data_range(measurement=archiver_task["measurement"],
-                             location=archiver_task["location_name"],
-                             start_dt=data_range_start,
-                             end_dt=data_range_end,
-                             fields=archiver_task["channels"])
-       if df is None:
+       pl_df = influx2client.read_data_pl(
+          start_dt=data_range_start,
+          stop_dt=data_range_end,
+          location=archiver_task["location_name"],
+          bucket=INFLUXDB_BUCKET_ST,          
+          measurement=archiver_task["measurement"],
+          channels=archiver_task["channels"])
+       if pl_df is None:
           logger.error("No Data! " + str(archiver_task))
           continue
-       table = pa.Table.from_pandas(df)
        file_path = Path(app_config["output_path"] + "/daily/" + clean_string(archiver_task["location_name"]))
        file_path.mkdir(parents=True, exist_ok=True)
-       pq.write_table(table, (file_path/(data_range_start.strftime("%Y-%m-%d_")+",".join(df.columns)+".parquet")).as_posix())
+       pl_df.write_parquet((file_path/(data_range_start.strftime("%Y-%m-%d_")+",".join(archiver_task["channels"])+".parquet")).as_posix())
        logger.info("Task completed and file written to " + file_path.as_posix())
     
     scheduler_next_run_ts += datetime.timedelta(days=1)
