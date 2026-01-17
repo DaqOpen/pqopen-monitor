@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1
 
 ARG PYTHON_VERSION=3.11
-FROM python:${PYTHON_VERSION}-alpine as base
+FROM python:${PYTHON_VERSION}-slim as base
 
-RUN apk update && apk add tzdata
+RUN apt-get update && \
+    apt-get install -y tzdata && \
+    rm -rf /var/lib/apt/lists/*
+
 ENV TZ=Europe/Vienna
 
 # Prevents Python from writing pyc files.
