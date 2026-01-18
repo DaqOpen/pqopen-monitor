@@ -79,7 +79,7 @@ client = InfluxDBClient(url=INFLUXDB_URL, token=INFLUXDB_TOKEN, org=INFLUXDB_ORG
 query_api = client.query_api()
 writer_api = client.write_api(write_options=SYNCHRONOUS)
 
-next_round_ts = floor_timestamp(time.time(), 900, "s") + 900
+next_round_ts = floor_timestamp(time.time(), 900, "s") # generate new files on startup
 
 while not app_killer.kill_now:
     while time.time() < next_round_ts:
@@ -91,5 +91,8 @@ while not app_killer.kill_now:
     process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "DE/Berlin")
     process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "CH/Solothurn")
     process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "DE/Essen")
+    process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "DE/Eisenberg")
+    process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "DE/Stade")
+    process_freq_psd_spectrum(query_api, writer_api, calc_dt_start, calc_dt_end, "ES/Pamplona")
     next_round_ts += 900
     
